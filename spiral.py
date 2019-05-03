@@ -99,7 +99,7 @@ def draw_cell(n, img, draw, levels, color=CELL_COLOR):
     rect = local_to_screen(x, y, img.width, img.height, levels)
     draw.rectangle(rect, fill=color)
 
-def append_to_image(img, start, end, levels, width, height, highlight=True):
+def append_to_image(img, start, end, levels, width, height, highlight=False):
     draw = ImageDraw.Draw(img)
 
     # Clear the first cell in case it was highlighted before.
@@ -126,12 +126,12 @@ def create_image(levels, width, height, n=-1, highlight=False):
     append_to_image(img, 1, n, levels, width, height, highlight=highlight)
     return img
 
-def create_gif(path, fps, width, height, levels, save_frames=False, primes_only=False):
-    filename, ext = os.path.splitext(path)
-    path_format = "{pre}{{}}.png".format(pre=filename)
-
+def create_spiral_frames(width, height, levels, primes_only=False):
+    """ Create an animation that spirals outwards, a number at a time.
+        
+        Returns a list of PIL.Image.Image instances with an extra attribute <idx>. 
+    """
     max_n = max_int(levels)
-
     last_frame = create_image(levels, width, height, n=1)
     frames = []
     prev = 1
@@ -140,19 +140,58 @@ def create_gif(path, fps, width, height, levels, save_frames=False, primes_only=
             continue
 
         last_frame = append_to_image(last_frame.copy(), prev, i, levels, width, height, highlight=(i < max_n))
+        last_frame.idx = i
         frames.append(last_frame)
-
-        if save_frames:
-            frames[-1].save(path_format.format(i))
-
         prev = i
+
+    return frames
+
+def create_grow_frames(width, height, levels):
+    """ Create an animation that grows outwards, a level at a time.
+        
+        Returns a list of PIL.Image.Image instances with an extra attribute <idx>. 
+    """
+    last_frame = create_image(levels, width, height, n=1)
+    frames = []
+    prev = 0
+    for level in range(1, levels + 1):
+        n = max_int(level)
+        last_frame = append_to_image(last_frame.copy(), prev + 1, n, levels, width, height, highlight=False)
+        last_frame.idx = level
+        frames.append(last_frame)
+        prev = n
+    
+    return frames
+
+def save_all_frames(path, frames):
+    filename, ext = os.path.splitext(path)
+    path_format = "{pre}{{}}.png".format(pre=filename)
+    for frame in frames:
+        frame.save(path_format.format(frame.idx))
+
+def create_spiral_gif(path, fps, width, height, levels, save_frames=False, primes_only=False):
+    frames = create_spiral_frames(width, height, levels, primes_only=primes_only)
+    if save_frames:
+        save_all_frames(path, frames)
         
     frames[0].save(path, 
-                   format="GIF", 
-                   save_all=True, 
-                   append_images=frames[1:], 
-                   duration=1000/fps, 
-                   loop=1)
+        format="GIF", 
+        save_all=True, 
+        append_images=frames[1:], 
+        duration=1000/fps, 
+        loop=1)
+
+def create_grow_gif(path, fps, width, height, levels, save_frames=False):
+    frames = create_grow_frames(width, height, levels)
+    if save_frames:
+        save_all_frames(path, frames)
+
+    frames[0].save(path,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=1000/fps,
+        loop=1)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -167,9 +206,13 @@ if __name__ == '__main__':
     parser.add_argument("--save_frames", action='store_true', 
                         help="Save every frame that makes up the GIF as a seperate image file.")
     parser.add_argument("--primes_only", action='store_true',
-                        help="Animate only prime numbers in GIF mode.")
-    parser.add_argument("--image_only", action='store_true', 
-                        help="Only create an image, not a GIF.")
+                        help="Animate only prime numbers in Spiral GIF mode.")
+    parser.add_argument("--image", action='store_true', 
+                        help="Create a seperate image of the final spiral.")
+    parser.add_argument("--spiral", action='store_true',
+                        help="Create a Spiral GIF.")
+    parser.add_argument("--grow", action='store_true',
+                        help="Create a Grow GIF.")
     args = parser.parse_args()
 
     t = time.time()
@@ -185,15 +228,21 @@ if __name__ == '__main__':
 
     sieve(max_int(levels))
 
-    if args.image_only:
-        path, ext = os.path.splitext(args.path)
-        path = args.path if ext else "{}.png".format(path)
+    if args.image:
+        path = "{}_image.png".format(args.path)
         create_image(levels, width, height).save(path)
-    else:
-        path, ext = os.path.splitext(args.path)
-        path = args.path if ext else "{}.gif".format(path)
+        print(path)
 
-        create_gif(path, args.fps, width, height, levels, 
-                   save_frames=args.save_frames, primes_only=args.primes_only)
+    if args.spiral:
+        path = "{}_spiral.gif".format(args.path)
+        create_spiral_gif(path, args.fps, width, height, levels, 
+                    save_frames=args.save_frames, primes_only=args.primes_only)
+        print(path)
+
+    if args.grow:
+        path = "{}_grow.gif".format(args.path)
+        create_grow_gif(path, args.fps, width, height, levels,
+                    save_frames=args.save_frames)
+        print(path)
     
     print("Done in {:.2f} seconds.".format(time.time() - t))
