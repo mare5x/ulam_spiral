@@ -13,6 +13,9 @@ CELL_COLOR = (255, 0, 0)
 PRIME_HIGHLIGHT_COLOR = (0, 255, 0)
 NONPRIME_HIGHLIGHT_COLOR = (0, 255, 255)
 
+# A flag for the local_to_screen function.
+LOCAL_TO_SCREEN_ROUNDING = "DISCRETE"  # or "NONE"
+
 # Set the array size when known.
 is_prime = [True] * 42
 
@@ -67,18 +70,35 @@ def int_to_point(n):
 
     return Point(x=col, y=row)
 
-def local_to_screen(x, y, width, height, levels):
-    """ Returns screen cell coordinates like so: [(x1, y1), (x2, y2)]. """
+def local_to_screen_none(x, y, width, height, levels):
+    # Version that makes rounding errors but doesn't make a black border.
+    
+    a = min(width, height)
+    dim = level_to_dimension(levels)
 
+    unit = a / dim
+
+    center_x = (width - unit) // 2
+    center_y = (height - unit) // 2
+
+    x1 = unit * x + center_x
+    y1 = center_y - unit * y
+    x2 = x1 + unit - 1
+    y2 = y1 + unit - 1
+
+    return [(x1, y1), (x2, y2)]
+
+def local_to_screen_discrete(x, y, width, height, levels):
     # Note: I allow off by one pixel errors.
     # (x, y) coordinates that map to values off screen get ignored.
-
-    a = min(width, height)
 
     # The remainder (cut) is used to center the image inside the square. This is done
     # so that each cell takes up the same amount of pixels and there aren't any nasty
     # rounding errors. If levels is too high, let each cell take up one pixel.
-    unit, cut = divmod(a, level_to_dimension(levels))
+    
+    a = min(width, height)
+    dim = level_to_dimension(levels)
+    unit, cut = divmod(a, dim)
     if unit == 0:
         unit = 1
         cut = 0
@@ -91,8 +111,14 @@ def local_to_screen(x, y, width, height, levels):
     y1 = unit * (levels - 1 - y) + top_left_y
     x2 = x1 + unit - 1
     y2 = y1 + unit - 1
-
+    
     return [(x1, y1), (x2, y2)]
+
+def local_to_screen(x, y, width, height, levels):
+    """ Returns screen cell coordinates like so: [(x1, y1), (x2, y2)]. """
+    if LOCAL_TO_SCREEN_ROUNDING == "NONE":
+        return local_to_screen_none(x, y, width, height, levels)
+    return local_to_screen_discrete(x, y, width, height, levels)
 
 def draw_cell(n, img, draw, levels, color=CELL_COLOR):
     x, y = int_to_point(n)
@@ -146,8 +172,8 @@ def create_spiral_frames(width, height, levels, primes_only=False):
 
     return frames
 
-def create_grow_frames(width, height, levels):
-    """ Create an animation that grows outwards, a level at a time.
+def create_expand_frames(width, height, levels):
+    """ Create an animation that expands outwards, a level at a time.
         
         Returns a list of PIL.Image.Image instances with an extra attribute <idx>. 
     """
@@ -163,17 +189,25 @@ def create_grow_frames(width, height, levels):
     
     return frames
 
+def create_grow_frames(width, height, levels):
+    """ Create an animation that grows outwards, a level at a time.
+        
+        Returns a list of PIL.Image.Image instances with an extra attribute <idx>. 
+    """
+    frames = []
+    for level in range(1, levels + 1):
+        frame = create_image(level, width, height)
+        frame.idx = level
+        frames.append(frame)
+    return frames
+
 def save_all_frames(path, frames):
     filename, ext = os.path.splitext(path)
     path_format = "{pre}{{}}.png".format(pre=filename)
     for frame in frames:
         frame.save(path_format.format(frame.idx))
 
-def create_spiral_gif(path, fps, width, height, levels, save_frames=False, primes_only=False):
-    frames = create_spiral_frames(width, height, levels, primes_only=primes_only)
-    if save_frames:
-        save_all_frames(path, frames)
-        
+def save_gif(path, fps, frames):
     frames[0].save(path, 
         format="GIF", 
         save_all=True, 
@@ -181,17 +215,30 @@ def create_spiral_gif(path, fps, width, height, levels, save_frames=False, prime
         duration=1000/fps, 
         loop=1)
 
+def create_spiral_gif(path, fps, width, height, levels, save_frames=False, primes_only=False):
+    frames = create_spiral_frames(width, height, levels, primes_only=primes_only)
+    if save_frames:
+        save_all_frames(path, frames)
+    save_gif(path, fps, frames)
+
+def create_expand_gif(path, fps, width, height, levels, save_frames=False):
+    frames = create_expand_frames(width, height, levels)
+    if save_frames:
+        save_all_frames(path, frames)
+    save_gif(path, fps, frames)
+
 def create_grow_gif(path, fps, width, height, levels, save_frames=False):
+    # A workaround to get a smoother animation.
+    global LOCAL_TO_SCREEN_ROUNDING
+    old_rounding = LOCAL_TO_SCREEN_ROUNDING
+    LOCAL_TO_SCREEN_ROUNDING = "NONE"
+
     frames = create_grow_frames(width, height, levels)
     if save_frames:
         save_all_frames(path, frames)
-
-    frames[0].save(path,
-        format="GIF",
-        save_all=True,
-        append_images=frames[1:],
-        duration=1000/fps,
-        loop=1)
+    save_gif(path, fps, frames)
+    
+    LOCAL_TO_SCREEN_ROUNDING = old_rounding
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -211,6 +258,8 @@ if __name__ == '__main__':
                         help="Create a seperate image of the final spiral.")
     parser.add_argument("--spiral", action='store_true',
                         help="Create a Spiral GIF.")
+    parser.add_argument("--expand", action='store_true',
+                        help="Create an Expand GIF.")
     parser.add_argument("--grow", action='store_true',
                         help="Create a Grow GIF.")
     args = parser.parse_args()
@@ -239,9 +288,15 @@ if __name__ == '__main__':
                     save_frames=args.save_frames, primes_only=args.primes_only)
         print(path)
 
+    if args.expand:
+        path = "{}_expand.gif".format(args.path)
+        create_expand_gif(path, args.fps, width, height, levels,
+                    save_frames=args.save_frames)
+        print(path)
+    
     if args.grow:
         path = "{}_grow.gif".format(args.path)
-        create_grow_gif(path, args.fps, width, height, levels,
+        create_grow_gif(path, args.fps, width, height, levels, 
                     save_frames=args.save_frames)
         print(path)
     
