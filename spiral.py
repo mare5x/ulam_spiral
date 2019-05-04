@@ -213,7 +213,7 @@ def save_gif(path, fps, frames):
         save_all=True, 
         append_images=frames[1:], 
         duration=1000/fps, 
-        loop=1)
+        loop=0)
 
 def create_spiral_gif(path, fps, width, height, levels, save_frames=False, primes_only=False):
     frames = create_spiral_frames(width, height, levels, primes_only=primes_only)
@@ -237,7 +237,7 @@ def create_grow_gif(path, fps, width, height, levels, save_frames=False):
     if save_frames:
         save_all_frames(path, frames)
     save_gif(path, fps, frames)
-    
+
     LOCAL_TO_SCREEN_ROUNDING = old_rounding
 
 if __name__ == '__main__':
@@ -282,8 +282,8 @@ if __name__ == '__main__':
         create_image(levels, width, height).save(path)
         print(path)
 
-    if args.spiral:
-        path = "{}_spiral.gif".format(args.path)
+    if args.spiral:            
+        path = "{}_spiral{primes}.gif".format(args.path, primes="_primes" if args.primes_only else "")
         create_spiral_gif(path, args.fps, width, height, levels, 
                     save_frames=args.save_frames, primes_only=args.primes_only)
         print(path)
